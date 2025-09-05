@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSON 校验 & 格式化 & 可视化</title>
+<style>
+    :root {
+        --primary: #4a90e2;
+        --primary-dark: #357ABD;
+        --bg: #f5f6fa;
+        --card-bg: #fff;
+        --border: #e6e6e6;
+        --shadow: rgba(0, 0, 0, 0.08);
+    }
+    body {
+        font-family: "Segoe UI", Helvetica, sans-serif;
+        background: var(--bg);
+        margin: 0;
+        padding: 0;
+        color: #333;
+    }
+    header {
+        background: linear-gradient(90deg, #4a90e2, #6ab1f7);
+        color: white;
+        padding: 18px 0;
+        text-align: center;
+        font-size: 1.5rem;
+        font-weight: 600;
+        letter-spacing: 1px;
+        box-shadow: 0 2px 6px rgba(0,0,0,.15);
+    }
+    .container {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 20px;
+        gap: 20px;
+        justify-content: center;
+        align-items: stretch;
+    }
+    .panel {
+        background: var(--card-bg);
+        border-radius: 12px;
+        box-shadow: 0 6px 20px var(--shadow);
+        flex: 1;
+        min-width: 340px;
+        max-width: 600px;
+        display: flex;
+        flex-direction: column;
+        padding: 16px;
+        overflow: hidden;
+    }
+    textarea {
+        width: 100%;
+        height: 300px;
+        font-family: monospace;
+        font-size: 14px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fcfcfc;
+        transition: border 0.2s, box-shadow 0.2s;
+        box-sizing: border-box;
+        resize: none;
+        outline: none;
+    }
+    textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 6px rgba(74,144,226,0.3);
+    }
+    .buttons {
+        margin: 12px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    select, button {
+        font-size: 14px;
+        padding: 7px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    select {
+        background: white;
+    }
+    button {
+        border: none;
+        background: var(--primary);
+        color: white;
+        font-weight: 500;
+        background: linear-gradient(135deg, var(--primary), #5aa0ee);
+        box-shadow: 0 2px 6px rgba(74,144,226,0.4);
+    }
+    button:hover {
+        background: linear-gradient(135deg, var(--primary-dark), #4a90e2);
+        box-shadow: 0 3px 10px rgba(74,144,226,0.5);
+    }
+    .error {
+        color: #ff4d4f;
+        font-size: 13px;
+        min-height: 18px;
+    }
+    #treeView {
+        background: #fafafa;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 12px;
+        font-family: monospace;
+        font-size: 14px;
+        overflow: auto;
+        height: 300px;
+        line-height: 1.5;
+    }
+    .key { color: #d35400; font-weight: 500; }
+    .string { color: #27ae60; }
+    .number { color: #2980b9; }
+    .boolean { color: #8e44ad; }
+    .null { color: #7f8c8d; }
+    ul {
+        list-style: none;
+        padding-left: 18px;
+        margin: 0;
+        border-left: 1px dashed #ccc;
+    }
+    li {
+        margin: 3px 0;
+        padding: 2px 0;
+        position: relative;
+        transition: background 0.2s;
+    }
+    li:hover {
+        background: rgba(74,144,226,0.05);
+    }
+    .toggle {
+        cursor: pointer;
+        color: #888;
+        user-select: none;
+        margin-right: 6px;
+        font-size: 12px;
+        display: inline-block;
+        width: 14px;
+        text-align: center;
+    }
+    .collapsed > ul {
+        display: none;
+    }
+</style>
+</head>
+<body>
+<header>JSON 校验 / 格式化 / 可视化</header>
+<div class="container">
+    <div class="panel">
+        <textarea id="jsonInput" placeholder="请输入 JSON 数据..."></textarea>
+        <div class="buttons">
+            缩进:
+            <select id="indentSelect">
+                <option value="2">2 空格</option>
+                <option value="4">4 空格</option>
+                <option value="0">压缩</option>
+            </select>
+            <button onclick="formatJSON()">格式化</button>
+            <button onclick="minifyJSON()">压缩</button>
+        </div>
+        <div id="errorMsg" class="error"></div>
+    </div>
+    <div class="panel">
+        <div id="treeView">可视化区域</div>
+    </div>
+</div>
+<script>
+const input = document.getElementById('jsonInput');
+const errorMsg = document.getElementById('errorMsg');
+const treeView = document.getElementById('treeView');
+const indentSelect = document.getElementById('indentSelect');
+let debounceTimer = null;
+
+function validateJSON(str) {
+    try {
+        return { valid: true, data: JSON.parse(str) };
+    } catch (e) {
+        return { valid: false, error: e.message };
+    }
+}
+
+function formatJSON() {
+    let text = input.value.trim();
+    const { valid, data, error } = validateJSON(text);
+    if (!valid) {
+        errorMsg.textContent = "JSON 错误: " + error;
+        return;
+    }
+    errorMsg.textContent = "";
+    const spaces = parseInt(indentSelect.value, 10);
+    input.value = JSON.stringify(data, null, spaces);
+    renderTree(data);
+    setCursorToEnd(input);
+}
+
+function minifyJSON() {
+    let text = input.value.trim();
+    const { valid, data, error } = validateJSON(text);
+    if (!valid) {
+        errorMsg.textContent = "JSON 错误: " + error;
+        return;
+    }
+    errorMsg.textContent = "";
+    input.value = JSON.stringify(data);
+    renderTree(data);
+    setCursorToEnd(input);
+}
+
+function renderTree(jsonData) {
+    treeView.innerHTML = '';
+    const ul = document.createElement('ul');
+    buildTree(jsonData, ul);
+    treeView.appendChild(ul);
+}
+
+function buildTree(obj, parent) {
+    if (typeof obj !== 'object' || obj === null) {
+        const li = document.createElement('li');
+        li.innerHTML = formatValue(obj);
+        parent.appendChild(li);
+        return;
+    }
+    for (let key in obj) {
+        const li = document.createElement('li');
+        const val = obj[key];
+        if (typeof val === 'object' && val !== null) {
+            const toggle = document.createElement('span');
+            toggle.textContent = '▼';
+            toggle.className = 'toggle';
+            toggle.onclick = () => {
+                li.classList.toggle('collapsed');
+                toggle.textContent = li.classList.contains('collapsed') ? '▶' : '▼';
+            };
+            li.appendChild(toggle);
+            const kSpan = document.createElement('span');
+            kSpan.className = 'key';
+            kSpan.textContent = `"${key}": `;
+            li.appendChild(kSpan);
+            const childUl = document.createElement('ul');
+            buildTree(val, childUl);
+            li.appendChild(childUl);
+        } else {
+            li.innerHTML = `<span class="key">"${key}": </span>${formatValue(val)}`;
+        }
+        parent.appendChild(li);
+    }
+}
+
+function formatValue(val) {
+    if (typeof val === 'string') {
+        return `<span class="string">"${val}"</span>`;
+    } else if (typeof val === 'number') {
+        return `<span class="number">${val}</span>`;
+    } else if (typeof val === 'boolean') {
+        return `<span class="boolean">${val}</span>`;
+    } else if (val === null) {
+        return `<span class="null">null</span>`;
+    }
+    return val;
+}
+
+function setCursorToEnd(el) {
+    el.focus();
+    el.selectionStart = el.selectionEnd = el.value.length;
+}
+
+input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+    const text = input.value.trim();
+    if (!text) {
+        treeView.innerHTML = '可视化区域';
+        errorMsg.textContent = '';
+        return;
+    }
+        const { valid, data, error } = validateJSON(text);
+    if (!valid) {
+        errorMsg.textContent = "JSON 错误: " + error;
+        treeView.innerHTML = '';
+    } else {
+        errorMsg.textContent = '';
+        renderTree(data);
+    }
+    }, 300);
+});
+</script>
+</body>
+</html>
